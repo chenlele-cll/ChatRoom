@@ -1,167 +1,228 @@
-# 聊天室说明
+# Java Socket Chat Room Learning Project
 
-* [聊天室说明](#聊天室说明)
-  * [题目要求](#题目要求)
-  * [架构](#架构)
-  * [实现原理](#实现原理)
-  * [命令字说明](#命令字说明)
-  * [功能展示](#功能展示)
-    * [服务器启动](#服务器启动)
-    * [客户端登录](#客户端登录)
-    * [查看在线用户](#查看在线用户)
-    * [私聊用户](#私聊用户)
-    * [文件传输](#文件传输)
-    * [查看接收文件](#查看接收文件)
-    * [查看命令提示](#查看命令提示)
-    * [退出](#退出)
+**Language:** English | [中文](README.zh.md)
 
-## 题目要求
+This is a Java Socket based chat room learning project. It uses a client server architecture to tie together login, online user tracking, private chat, file transfer, heartbeat checks, and received file management. The main goal is to practice how TCP and UDP split responsibilities in network communication, so the project is positioned as a learning and demo example.
 
-本项目是基于 Tcp/Udp 的网络通信项目，其设计要求如下：
+## Project Requirements
 
-1. 采用 Java 语言开发
-2. 可以和指定用户聊天：不超过 100 个用户
-3. 可以和指定用户上传、下载文件，可以多个文件、多用户间并行传输，有开始、结束时间、耗时统计，打印关键日志
-4. 独立双通道机制：命令交互使用 UDP，文件传输使用 TCP，相互不能阻塞，能启动、取消下载
-5. 需要考虑弱网环境：即 UDP 丢包，TCP 慢等情况
+The original project requirements are:
 
-限制要求：
+- Use Java.
+- Support chatting with a specified user and no more than 100 users.
+- Support file upload and download with specified users, including multiple files and multiple users in parallel, along with start time, end time, elapsed time statistics, and key logs.
+- Use an independent dual channel design, where UDP handles command interaction and TCP handles file transfer, and neither channel blocks the other. Downloads can be started and cancelled.
+- Consider weak network conditions, such as UDP packet loss and slow TCP transfer.
 
-1. 使用 Java 的基本 socket 类，不要使用 Netty 等 socket 框架，采用下面 2 种：
-   - TCP:java.net.Socket
-   - UDP:java.net.DatagramSocket
-2. 检测对方离线：上线、离线打印关键日志
+Restrictions and implementation constraints:
 
-本项目基本满足以上要求
+- Use basic Java socket classes only, not Netty or any other socket framework.
+- TCP uses `java.net.Socket`.
+- UDP uses `java.net.DatagramSocket`.
+- Detect when a peer goes offline and print key online and offline logs.
+- This project basically satisfies these requirements.
 
-## 架构
+## Architecture
 
-聊天室采用 C/S 架构：
+```mermaid
+flowchart LR
+  A[Client A]
+  S[Server, user registry / connection coordinator]
+  B[Client B]
 
-- 服务器：
-  - TCP 监听用户连接：用户登录以后与服务器连接，保持登录状态
-  - UDP 响应用户命令：用户通过命令字向服务器进行请求
-  - TCP 心跳检测：持续与用户发送心跳包，检测用户状态
-- 客户端：
-  - 查看在线用户：`-ol`
-  - 私聊用户：`-pm@chen@hi`，表示向 `chen` 发送了一条 `hi` 信息
-  - 查看接收文件：`-af`，查看用户目录下接收的文件列表
-  - 文件传输：`f@chen@file`，表示向 `chen` 发送了文件 `file`
-  - 查看命令提示：`-h`
-  - 退出：`-q`
+  A -->|TCP registration| S
+  B -->|TCP registration| S
 
-## 实现原理
+  A -->|Query peer info over UDP, then private chat| B
+  B -->|Query peer info over UDP, then private chat| A
 
-用户登录：
-
-- 用户输入信息：用户名、TCP 监听端口、UDP 收发端口
-- 启动本地服务：与服务端的 TCP 和 UDP 连接
-- 创建用户目录：存放用户接收的文件
-- 通过 TCP 传送用户信息到服务器注册
-- TCP 广播上线信息
-
-查看在线用户：
-
-- 客户端发送命令字
-- 服务器将维护的用户列表返回
-
-私聊用户：
-
-- 向服务器获取私聊用户的相关信息
-- 服务器将该用户的信息返回
-- 收到以后建立与该用户的 UDP 收发通道
-
-查看接收文件：
-
-- 返回用户目录下的文件列表
-
-文件传输：A -> B 传
-
-- 向服务器获取 B 用户信息
-- 服务器将 B 用户的信息返回给 A
-- A 发送启动监听的命令给 B
-- B 启动 TCP 监听准备接收文件
-- A 连接 B 的 TCP 端口传送文件
-
-退出：
-
-- 用户给服务器发送退出命令字
-- 服务器移除该用户的相关信息
-- 广播用户下线信息
-
-心跳检测：
-
-- 服务器启动一个心跳检测线程
-- 间隔的给用户发送心跳包
-- 收到反馈说明用户在线
-- 反之将其连接清除
-
-## 命令字说明
-
-总共包含 9 个命令：
-
-```
-ONLINE_USERS("-ol", "online users", "-ol"), // 查看在线用户
-PRIVATE_MSG("-pm", "private message", "-pm@chen@hello"),  // 私信
-FILE_TRANSFER("-f", "file transfer", "-f@chen@file"),   // 传输文件
-ACCEPTED_FILES("-af", "accepted file list", "-af"),   // 获取接收文件列表
-EXIT("-q", "exit", "-q"),   // 退出客户端
-START_LISTEN("-sl", "start listen", "-sl"),   // 启动监听接收文件
-SOUT("-sout", "output", "-sout@content"),   // 直接输出该命令所附带的信息
-HELP("-h", "command prompt", "-h"),   // 命令提示
-NEW_CHANNEL("-nc", "New channel", "-nc@content");   // 创建新的聊天通道
+  A -->|TCP file transfer| B
 ```
 
-## 功能展示
+- The server uses fixed ports `9091` for TCP listening, `9090` for UDP receiving, and `9092` for UDP sending
+- TCP handles registration, online and offline broadcasts, and heartbeat checks
+- UDP handles command processing, online user lookup, private chat negotiation, and new channel setup
+- File transfer starts with the receiver opening a local TCP listener, then the sender connects directly and pushes the file
 
-### 服务器启动
+## Implemented Features
 
-![StartServer.png](fig/StartServer.png)
+- View online users
+- Send private messages
+- Start file transfer
+- View the local list of received files
+- View command hints
+- Exit the client and trigger an offline broadcast
+- The server uses a heartbeat thread to track client status and broadcasts updates when that status changes
 
-### 客户端登录
+## Tech Stack
 
-目前没有对用户名进行重名限制，所以在测试过程中需要注意不要输入相同的名字。
+| Technology / Tool | Description |
+| --- | --- |
+| Java 8 | The base Java version used by the project. |
+| Maven | Used for dependency management and project builds. |
+| `java.net.Socket` / `java.net.ServerSocket` | Used for TCP connections and server listening. |
+| `java.net.DatagramSocket` | Used for UDP send and receive operations. |
+| Multithreading | Used to handle concurrent server tasks and transfer flows. |
+| Lombok | Used to reduce boilerplate code. |
+| SLF4J + Logback | Used for unified runtime logging. |
+| Fastjson | Used for data parsing and serialization. |
+| Spring Core | Used to provide common utility support. |
 
-端口有进行检测，一旦发现端口不可用会重新输入。
+## Transport Protocol Design
 
-![StartServer.png](fig/clientLogin.png)
+This chat room separates three kinds of communication, matching the source code's ports, command types, and handling flow. The server acts as the user registry and connection-info coordinator. It does not directly relay private chat content or file bytes.
 
-### 查看在线用户
+| Communication Type | Purpose |
+| --- | --- |
+| TCP server connection | After login, the client registers with the server, which uses this connection to maintain the online user table and handle online and offline broadcasts plus heartbeat checks |
+| UDP command exchange | The client asks the server for online users and peer connection details, then builds point to point communication with the target client based on the returned information |
+| Client to client UDP / TCP transfer | Private messages travel over the client to client UDP channel, while file transfer uses the client to client TCP channel |
 
-![StartServer.png](fig/onlineUsers.png)
+Before communication starts, these conditions must be met:
 
-### 私聊用户
+1. Both clients are already logged in and registered with the server.
+2. The target username is online and already present in the server's `userMap`.
+3. The test network must allow both IP addresses and ports to be reached, or the direct UDP or TCP connection between clients cannot be established.
 
-发送方：
+Common command formats are listed below. The examples match the `ChatType` definitions in the source code.
 
-![StartServer.png](fig/pmTest1.png)
+- `username@-ol`, query online users
+- `username@-pm@targetUser@message`, start a private chat
+- `username@-f@targetUser@fileName`, negotiate file transfer
+- `username@-nc@targetUser@message`, create a new chat channel
+- `username@-sl`, let the receiver start local file listening
 
-接收方：
+You can understand the private chat flow like this:
 
-![StartServer.png](fig/pmTest2.png)
+1. Client A first connects to the server over TCP and completes login and registration.
+2. Client B also logs in and registers, and the server records B's connection info in the online user table.
+3. Client A sends `-pm`. If there is no channel to B yet, it first sends `-nc` to ask the server for B's connection info.
+4. The server returns Client B's IP and port based on the online user table.
+5. After getting that information, Client A connects directly to Client B over UDP and sends the private message.
 
-### 文件传输
+You can understand the file transfer flow like this:
 
-发送方：展示传送文件名、文件大小、起始时间和消耗时间
+1. Client A sends `-f` and first asks the server for Client B's connection info.
+2. The server returns Client B's details from the online user table.
+3. After receiving `-sl`, Client B starts a local TCP listener.
+4. Client A uses the returned information to connect directly to Client B's TCP listening port.
+5. The file bytes move directly from Client A to Client B, and the server does not relay file content.
 
-![StartServer.png](fig/transferTest1.png)
+## Core Implementation Modules
 
-接收方：展示接收文件名，文件大小，存储位置，起始时间和文件消耗
+The table below maps the main classes to their responsibilities so the protocol design and code structure are easy to line up.
 
-![StartServer.png](fig/transferTest2.png)
+| Module / Class | Responsibility |
+| --- | --- |
+| `Server` | Server entry point. It maintains online users, coordinates TCP and UDP requests, and handles login, logout, and heartbeat checks. |
+| `Client` | Client entry point. It handles login, command dispatch, private chat, file transfer negotiation, and local channel startup. |
+| `Tcp` | TCP communication wrapper. It handles connection setup, message exchange, and stream based file transfer. |
+| `TalkSend` | UDP sender wrapper. It sends commands and chat data to the server or other clients. |
+| `TalkReceive` | UDP receiver wrapper. It listens for and parses incoming datagrams. |
+| `ChatType` | Command type enum. It centralizes command keywords, examples, and menu order. |
+| `User` | User info model. It stores registration data such as username, IP, and port. |
+| `FileUtil` | File utility class. It creates the local receive directory, checks file existence, and reads file lists. |
 
-### 查看接收文件
+## Command Reference
 
-本命令是查看其用户目录下的文件，即接收的文件
+The project defines 9 command types:
 
-![StartServer.png](fig/acceptedFile.png)
+```java
+ONLINE_USERS("-ol", "online users", "-ol"), // View online users
+PRIVATE_MSG("-pm", "private message", "-pm@chen@hello"), // Private message
+FILE_TRANSFER("-f", "file transfer", "-f@chen@file"), // Transfer file
+ACCEPTED_FILES("-af", "accepted file list", "-af"), // View received file list
+EXIT("-q", "exit", "-q"), // Exit client
+START_LISTEN("-sl", "start listen", "-sl"), // Start listener for receiving files
+SOUT("-sout", "output", "-sout@content"), // Print attached command message
+HELP("-h", "command prompt", "-h"), // Command help
+NEW_CHANNEL("-nc", "New channel", "-nc@content"); // Create a new chat channel
+```
 
-### 查看命令提示
+### Common Commands
 
-![StartServer.png](fig/help.png)
+- `-ol`, view online users
+- `-pm@chen@hello`, send a private message with the content `hello` to `chen`
+- `-f@chen@file`, send the file `file` to `chen`
+- `-af`, view the list of files already received in the current user's directory
+- `-h`, view command hints
+- `-q`, exit the client
 
-### 退出
+### Protocol Commands
 
-由于服务器有心跳检测，所以不管是什么形式的退出，服务器都可以感知
+- `-sl`, start the file receive listener, used automatically by the file transfer flow
+- `-sout@content`, print the message returned by the server
+- `-nc@content`, create a new chat channel for private chat negotiation
 
-![StartServer.png](fig/quit.png)
+## How to Run
+
+1. Run a Maven build, for example `mvn clean package`
+2. Start the server: `mvn exec:java -Dexec.mainClass="org.bitkernel.server.Server"`
+3. Start one or more clients: `mvn exec:java -Dexec.mainClass="org.bitkernel.client.Client"`
+4. If the current `pom.xml` does not yet configure the Maven Exec plugin, the `mvn exec:java` command above needs that plugin added first, or you can run the matching main class directly in your IDE
+5. Each client must use different local UDP and TCP ports to avoid port conflicts
+6. After logging in, start with `-h` to view the commands, then use `-ol`, `-pm@chen@hello`, `-f@chen@file`, `-af`, and `-q` as needed
+
+## Screenshots
+
+### Server Startup
+
+The screen shown after running `mvn exec:java -Dexec.mainClass="org.bitkernel.server.Server"`.
+
+![Server startup](fig/StartServer.png)
+
+### Client Login
+
+After the client starts, enter the username, TCP listening port, and UDP send and receive ports to complete login and registration. If a port conflict occurs, enter the values again.
+
+![Client login](fig/clientLogin.png)
+
+### View Online Users
+
+After login, enter `-ol` to query the online user list.
+
+![View online users](fig/onlineUsers.png)
+
+### Private Chat
+
+Sender side, enter `-pm@chen@hello` to send `hello` to `chen`.
+
+![Private chat sender](fig/pmTest1.png)
+
+Receiver side, the private message content is displayed.
+
+![Private chat receiver](fig/pmTest2.png)
+
+### File Transfer
+
+Sender side, enter `-f@chen@file` to start transferring the file `file` to `chen`.
+
+![File transfer sender](fig/transferTest1.png)
+
+Receiver side, the file name, file size, storage location, and elapsed time are displayed.
+
+![File transfer receiver](fig/transferTest2.png)
+
+### View Received Files
+
+Enter `-af` to view the list of received files in the current user's directory.
+
+![Received file list](fig/acceptedFile.png)
+
+### View Command Hints
+
+Enter `-h` to view the command hints.
+
+![Command hints](fig/help.png)
+
+### Exit
+
+Enter `-q` to exit the client, and the server will detect the offline state through heartbeat checks.
+
+![Exit](fig/quit.png)
+
+## What I Learned
+
+- I got a much clearer picture of how TCP and UDP split responsibilities, and it became easier to separate command exchange, connection management, and file transfer.
+- I also learned more about server-side concurrency, because TCP listening, UDP handling, and heartbeat checks run independently and make the structure much clearer.
+- Finally, I connected file transfer, elapsed time tracking, and local file persistence into one complete flow, which made stream based Socket programming feel more concrete.
